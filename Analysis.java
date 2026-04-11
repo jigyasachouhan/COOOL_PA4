@@ -1,5 +1,6 @@
 import java.util.*;
 
+import polyglot.ext.param.types.Param;
 import soot.*;
 import soot.jimple.AnyNewExpr;
 import soot.jimple.InstanceFieldRef;
@@ -10,10 +11,12 @@ import soot.jimple.ParameterRef;
 import soot.jimple.Ref;
 import soot.jimple.StaticFieldRef;
 import soot.jimple.ThisRef;
+import soot.jimple.VirtualInvokeExpr;
 import soot.jimple.internal.JAssignStmt;
 import soot.jimple.internal.JIdentityStmt;
 import soot.jimple.internal.JInvokeStmt;
 import soot.jimple.internal.JNewExpr;
+import soot.jimple.toolkits.invoke.SiteInliner;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 import soot.toolkits.scalar.FlowSet;
@@ -30,9 +33,11 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
     Map<SootClass, Integer> StaticObjMap = new LinkedHashMap<>(16, 0.75f, true);
     Set<Integer> negSet = new HashSet<>();
     Map<Immediate, Integer> immediateToOBjID = new LinkedHashMap<>(16, 0.75f, true);
+    Map<Unit, Boolean> inlinableMap;
 
-    public Analysis(DirectedGraph<Unit> graph) {
+    public Analysis(DirectedGraph<Unit> graph, Map<Unit, Boolean> inlinableMap) {
         super(graph);
+        this.inlinableMap = inlinableMap;
         negSet.add(-1);
         doAnalysis();
         //TODO Auto-generated constructor stub
@@ -40,7 +45,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     void myPrint(Object toPrint)
     {
-        // System.out.println(toPrint.toString());
+        System.out.println(toPrint.toString());
     }
 
     protected int getobjID()
@@ -53,15 +58,24 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
     protected void handleIdentityStmt(JIdentityStmt stmt, Pgraph out)
     {
         myPrint("Handling Identity Statement");
-        Value lhs = stmt.getLeftOp();
+        Value rhs = stmt.getRightOp();
         Integer ID = params;
         params = params-1;
         Set<Integer> s = new HashSet<>();
         s.add(ID);
-        out.sMap.put(lhs, s);
+        out.sMap.put(rhs, s);
         out.hMap.put(ID, new LinkedHashMap<>(16, 0.75f, true));
         lineNoToObjID.put(ID, ID);
-        out.objIdToClassMap.put(ID, ((ParameterRef) lhs).getType());
+        if(rhs instanceof ParameterRef){
+            ParameterRef pr = (ParameterRef)  rhs;
+            Type tp = pr.getType();
+            out.objIdToClassMap.put(ID, tp);
+        }
+        if(rhs instanceof ThisRef){
+            ThisRef tr = (ThisRef)  rhs;
+            Type tp = tr.getType();
+            out.objIdToClassMap.put(ID, tp);
+        }
         myPrint("Out Set after handling identity statement");
         myPrint(out);
     }
@@ -97,7 +111,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
             out.sMap.put(lhs, s);
             out.hMap.put(ID, new LinkedHashMap<>(16, 0.75f, true));
             lineNoToObjID.put(myID, ID);
-            out.objIdToClassMap.put(ID, ((NewExpr) rhs).getNewType());
+            out.objIdToClassMap.put(ID, ((NewExpr) rhs).getBaseType());
             myPrint("Out Set after handling Assignment statement");
             myPrint(out);
             return;
@@ -384,6 +398,50 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         myPrint("Out Set after handling Invoke statement");
         myPrint(out);
 
+        if (invoke instanceof VirtualInvokeExpr) {
+            VirtualInvokeExpr vie = (VirtualInvokeExpr) invoke;
+
+            // Base object (the receiver)
+            Local base = (Local) vie.getBase();
+
+            // Method being called
+            SootMethod method = vie.getMethod();
+
+            // Arguments
+            List<Value> args = vie.getArgs();
+            SootMethod target = vie.getMethod();
+
+
+            // Skip unsafe cases
+            if (!target.isConcrete()) return;
+            if (target.getDeclaringClass().isInterface()) return;
+
+            Set<Integer> bases = in.sMap.getOrDefault(base, new HashSet<>());
+            Set<Type> types = new HashSet<>();
+            for(Integer b : bases)
+            {
+                if(in.objIdToClassMap.containsKey(b))
+                    types.add(in.objIdToClassMap.get(b));
+            }
+            if(types.size() == 1)
+            {
+                System.out.println("This is inlineable");
+                Type t = types.iterator().next();
+                SootClass concreteClass = ((RefType) t).getSootClass();
+
+                // Make sure the method actually exists in this class
+                if (!concreteClass.declaresMethod(method.getSubSignature())) return;
+
+                SootMethod resolved = concreteClass.getMethod(method.getSubSignature());
+
+                // Set the refined method reference
+                vie.setMethodRef(resolved.makeRef());
+
+                this.inlinableMap.put(stmt, true);
+            }
+            
+        }
+
     }
 
     @Override
@@ -399,6 +457,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         // out = in.deepcopy();
         out.hMap = in.getHmapcopy();
         out.sMap = in.getSmapcopy();
+        out.objIdToClassMap = in.getobjmapcopy();
 
 
         // myPrint("Hello?");

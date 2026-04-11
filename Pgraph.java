@@ -1,19 +1,23 @@
 import java.util.*;
+
+import fj.data.vector.V;
 import soot.*;
 
 public class Pgraph {
     Map<Value, Set<Integer>> sMap;
     Map<Integer, Map<SootField, Set<Integer>>> hMap;
-    Map<Integer, SootClass> objIdToClassMap;
+    Map<Integer, Type> objIdToClassMap;
 
     public Pgraph() {
         this.sMap = new LinkedHashMap<>(16, 0.75f, true);
         this.hMap = new LinkedHashMap<>(16, 0.75f, true);
+        this.objIdToClassMap = new LinkedHashMap<>(16,0.75f,true);
     }
 
     public void clear() {
         sMap.clear();
         hMap.clear();
+        objIdToClassMap.clear();
     }
 
     
@@ -24,6 +28,10 @@ public class Pgraph {
     public Map<Integer, Map<SootField,Set<Integer>>> getHmapcopy()
     {
         return deepcopyhmap(hMap);
+    }
+    public Map<Integer, Type> getobjmapcopy()
+    {
+        return deepcopyobjmap(objIdToClassMap);
     }
 
     public static Map<Value, Set<Integer>> deepcopysmap(Map<Value, Set<Integer>> original)
@@ -43,6 +51,24 @@ public class Pgraph {
         }
         return copy;
     }
+
+    public static Map<Integer, Type> deepcopyobjmap(Map<Integer, Type> original)
+    {
+        if (original == null)
+        {
+            return null;
+        }
+        Map<Integer, Type>  copy = new LinkedHashMap<>(16, 0.75f, true);
+
+        for (Map.Entry<Integer, Type> entry : original.entrySet())
+        {
+            Integer key = entry.getKey();
+            Type value = entry.getValue();
+            copy.put(key, value);
+        }
+        return copy;
+    }
+
     public static Map<Integer, Map<SootField, Set<Integer>>> deepcopyhmap(Map<Integer, Map<SootField, Set<Integer>>> original)
     {
         if (original == null)
@@ -79,6 +105,7 @@ public class Pgraph {
         Pgraph copy = new Pgraph();
         copy.hMap = deepcopyhmap(hMap);
         copy.sMap = deepcopysmap(sMap);
+        copy.objIdToClassMap = deepcopyobjmap(objIdToClassMap);
         return copy;
     }
 
@@ -228,6 +255,9 @@ public class Pgraph {
         myString += "\n";
         myString += "hMap\n";
         myString += hMap.toString();
+        myString += "\n";
+        myString += "objMap\n";
+        myString += objIdToClassMap.toString();
         return myString;
     }
 }

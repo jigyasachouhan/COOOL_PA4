@@ -4,7 +4,7 @@ public class yash {
 		long start = System.nanoTime();
 		for(int i = 0; i < 1000000; i++) {
 			// do nothing, just to consume some time
-			Test.run();
+			Test.main(args);
 
 		}
 		long end = System.nanoTime();

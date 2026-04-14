@@ -12,10 +12,8 @@ public class PA4 {
         Options.v().set_keep_line_number(true);
 
         SceneTransformer sceneTransformer = new AnalysisTransformer();
-        SceneTransformer inliner = new InlinerTransform((AnalysisTransformer)sceneTransformer);
 
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.analysis", sceneTransformer));
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.inliner", inliner));
         PackManager.v().getPack("jtp").add(new Transform("jtp.DCE", new BodyTransformer() {
             @Override
             protected void internalTransform(Body b, String phaseName, Map<String, String> options) {

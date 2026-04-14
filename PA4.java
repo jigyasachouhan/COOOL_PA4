@@ -11,8 +11,8 @@ public class PA4 {
         SceneTransformer inliner = new InlinerTransform((AnalysisTransformer)sceneTransformer);
 
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.dfa", sceneTransformer));
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.dfa iansd", inliner));
-
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.dfa", inliner));
+        
         //Set up arguments for Soot
         String[] sootArgs = {
             "-cp", classPath, 

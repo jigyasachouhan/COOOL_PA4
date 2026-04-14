@@ -34,6 +34,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
     Set<Integer> negSet = new HashSet<>();
     Map<Immediate, Integer> immediateToOBjID = new LinkedHashMap<>(16, 0.75f, true);
     Map<Unit, Boolean> inlinableMap;
+    Boolean isInlinable = false;
 
     public Analysis(DirectedGraph<Unit> graph, Map<Unit, Boolean> inlinableMap) {
         super(graph);
@@ -438,6 +439,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
                 vie.setMethodRef(resolved.makeRef());
 
                 this.inlinableMap.put(stmt, true);
+                isInlinable = true;
             }
             
         }

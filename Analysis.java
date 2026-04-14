@@ -1,25 +1,19 @@
 import java.util.*;
 
-import polyglot.ext.param.types.Param;
 import soot.*;
-import soot.jimple.AnyNewExpr;
 import soot.jimple.InstanceFieldRef;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.InvokeExpr;
 import soot.jimple.NewExpr;
 import soot.jimple.ParameterRef;
-import soot.jimple.Ref;
 import soot.jimple.StaticFieldRef;
 import soot.jimple.ThisRef;
 import soot.jimple.VirtualInvokeExpr;
 import soot.jimple.internal.JAssignStmt;
 import soot.jimple.internal.JIdentityStmt;
 import soot.jimple.internal.JInvokeStmt;
-import soot.jimple.internal.JNewExpr;
-import soot.jimple.toolkits.invoke.SiteInliner;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
-import soot.toolkits.scalar.FlowSet;
 // import Pgraph.*;
 
 
@@ -41,7 +35,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         this.inlinableMap = inlinableMap;
         negSet.add(-1);
         doAnalysis();
-        //TODO Auto-generated constructor stub
     }
 
     void myPrint(Object toPrint)
@@ -409,7 +402,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
             SootMethod method = vie.getMethod();
 
             // Arguments
-            List<Value> args = vie.getArgs();
             SootMethod target = vie.getMethod();
 
 
@@ -448,7 +440,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     @Override
     protected void flowThrough(Pgraph in, Unit stmt, Pgraph out) {
-        // TODO Auto-generated method stub
         // throw new UnsupportedOperationException("Unimplemented method 'flowThrough'");
 
         // A few cases to deal with here.
@@ -483,7 +474,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     @Override
     protected void copy(Pgraph arg0, Pgraph arg1) {
-        // TODO Auto-generated method stub
         // myPrint("Copy arg0");
         // myPrint(arg0);
         // myPrint("Copy arg1");
@@ -496,7 +486,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     @Override
     protected void merge(Pgraph in1, Pgraph in2, Pgraph out) {
-        // TODO Auto-generated method stub
         // throw new UnsupportedOperationException("Unimplemented method 'merge'");
         out.clear();
 
@@ -606,7 +595,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     private Map<Integer, Map<SootField, Set<Integer>>> mergeHmap(Map<Integer,Map<SootField,Set<Integer>>> hMap,
             Map<Integer,Map<SootField,Set<Integer>>> hMap2) {
-        // TODO Auto-generated method stub
         // throw new UnsupportedOperationException("Unimplemented method 'mergeHmap'");
         Map<Integer, Map<SootField, Set<Integer>>> mergedMap = new LinkedHashMap<>(16, 0.75f, true);
 
@@ -644,6 +632,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
                 newMap.put(inner_key, merged);
             }
             mergedMap.put(k, newMap);
+            
         }
 
         return mergedMap;
@@ -651,7 +640,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     @Override
     protected Pgraph newInitialFlow() {
-        // TODO Auto-generated method stub
         return new Pgraph();
     }
 

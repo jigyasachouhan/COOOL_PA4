@@ -1,5 +1,9 @@
+import java.util.Map;
+
 import soot.*;
+import soot.jimple.toolkits.scalar.DeadAssignmentEliminator;
 import soot.options.Options;
+import soot.toolkits.scalar.UnusedLocalEliminator;
 
 public class PA4 {
     public static void main(String[] args) {
@@ -10,9 +14,16 @@ public class PA4 {
         SceneTransformer sceneTransformer = new AnalysisTransformer();
         SceneTransformer inliner = new InlinerTransform((AnalysisTransformer)sceneTransformer);
 
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.dfa", sceneTransformer));
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.dfa", inliner));
-        
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.analysis", sceneTransformer));
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.inliner", inliner));
+        PackManager.v().getPack("jtp").add(new Transform("jtp.DCE", new BodyTransformer() {
+            @Override
+            protected void internalTransform(Body b, String phaseName, Map<String, String> options) {
+                DeadAssignmentEliminator.v().transform(b);
+                UnusedLocalEliminator.v().transform(b);
+            }
+        }));
+
         //Set up arguments for Soot
         String[] sootArgs = {
             "-cp", classPath, 

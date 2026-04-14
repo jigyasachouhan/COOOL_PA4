@@ -1,0 +1,8 @@
+{
+    "java.project.referencedLibraries": [
+        "soot-4.6.0-jar-with-dependencies.jar"
+    ],
+    "java.project.sourcePaths": [
+        "."
+    ]
+}

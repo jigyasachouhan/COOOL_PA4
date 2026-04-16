@@ -51,13 +51,15 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     protected void handleIdentityStmt(JIdentityStmt stmt, Pgraph out)
     {
+        // r0 = @this: Test
         myPrint("Handling Identity Statement");
+        Value lhs = stmt.getLeftOp();
         Value rhs = stmt.getRightOp();
         Integer ID = params;
         params = params-1;
         Set<Integer> s = new HashSet<>();
         s.add(ID);
-        out.sMap.put(rhs, s);
+        out.sMap.put(lhs, s);
         out.hMap.put(ID, new LinkedHashMap<>(16, 0.75f, true));
         lineNoToObjID.put(ID, ID);
         if(rhs instanceof ParameterRef){
@@ -74,6 +76,85 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         myPrint(out);
     }
 
+    protected void handleInvokeExpr(Pgraph in, Unit stmt, InvokeExpr invoke, Pgraph out)
+    {
+        myPrint("Handling InvokeExpr");
+        Set<Integer> killSet = new HashSet<>();
+        if (invoke instanceof InstanceInvokeExpr)
+        {
+            Value base = ((InstanceInvokeExpr) invoke).getBase();
+            collectReachable(base, out, killSet);
+        }
+        if (invoke.getArgs() != null)
+        {
+        for (Value arg : invoke.getArgs())
+        {
+            collectReachable(arg, out, killSet);
+        }
+        }
+        myPrint("Out Set before handling Invoke statement");
+        myPrint(out);
+        for (int i : killSet)
+        {
+            myPrint("killing: " + i);
+            out.hMap.put(i, new LinkedHashMap<>(16, 0.75f, true));;
+        }
+        myPrint("Out Set after handling Invoke statement");
+        myPrint(out);
+
+        if (invoke instanceof VirtualInvokeExpr) {
+            VirtualInvokeExpr vie = (VirtualInvokeExpr) invoke;
+
+            // Base object (the receiver)
+            Local base = (Local) vie.getBase();
+
+            // Method being called
+            SootMethod method = vie.getMethod();
+
+            // Arguments
+            SootMethod target = vie.getMethod();
+
+
+            // Skip unsafe cases
+            if (!target.isConcrete()) return;
+            if (target.getDeclaringClass().isInterface()) return;
+
+            Set<Integer> bases = in.sMap.getOrDefault(base, new HashSet<>());
+            Set<Type> types = new HashSet<>();
+            for(Integer b : bases)
+            {
+                if(in.objIdToClassMap.containsKey(b))
+                    types.add(in.objIdToClassMap.get(b));
+            }
+            if(types.isEmpty()){
+                // the current call site might be from the base object
+                
+            }
+            else if(types.size() == 1)
+            {
+                myPrint("yes, this is inlineable");
+                Type t = types.iterator().next();
+                SootClass concreteClass = ((RefType) t).getSootClass();
+
+                // Make sure the method actually exists in this class
+                if (!concreteClass.declaresMethod(method.getSubSignature())) return;
+
+                SootMethod resolved = concreteClass.getMethod(method.getSubSignature());
+
+                // Set the refined method reference
+                vie.setMethodRef(resolved.makeRef());
+
+                this.inlinableMap.put(stmt, true);
+                isInlinable = true;
+            }
+            else{
+                myPrint("no, this is not inlineable");
+            }
+            
+        }
+
+    }
+
     protected void handleAssignStmt(Pgraph in, JAssignStmt stmt, Pgraph out)
     {
         // 
@@ -81,14 +162,14 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         Value lhs = stmt.getLeftOp();
         Value rhs = stmt.getRightOp();
 
-        myPrint("rhs immidiete: " + (rhs instanceof Immediate));
-        myPrint("rhs Primtype: " + (rhs instanceof PrimType));
-        myPrint("lhs immidiete: " + (lhs instanceof Immediate));
-        myPrint("lhs Primtype: " + (lhs instanceof PrimType));
+        if(rhs instanceof InvokeExpr){
+            handleInvokeExpr(in, stmt, (InvokeExpr) rhs, out);
+            return;
+        }
+
         // New Expression
         if (rhs instanceof NewExpr && lhs instanceof Local)
         {
-            myPrint("new Expression");
             int ID;
             int lineno = stmt.getJavaSourceStartLineNumber();
             int myID = lineno;
@@ -114,7 +195,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         // Simple Assignment
         if (rhs instanceof Local && lhs instanceof Local)
         {
-            myPrint("Simple Assignment");
             Set<Integer> v = out.sMap.get(rhs);
             if (v == null || v.isEmpty())
             {
@@ -365,78 +445,6 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     }
 
-    protected void handleInvoke(Pgraph in, JInvokeStmt stmt, Pgraph out)
-    {
-        myPrint("Handling Invoke");
-        Set<Integer> killSet = new HashSet<>();
-        InvokeExpr invoke = stmt.getInvokeExpr();
-        if (invoke instanceof InstanceInvokeExpr)
-        {
-            Value base = ((InstanceInvokeExpr) invoke).getBase();
-            collectReachable(base, out, killSet);
-        }
-        if (invoke.getArgs() != null)
-        {
-        for (Value arg : invoke.getArgs())
-        {
-            collectReachable(arg, out, killSet);
-        }
-        }
-        myPrint("Out Set before handling Invoke statement");
-        myPrint(out);
-        for (int i : killSet)
-        {
-            myPrint("killing: " + i);
-            out.hMap.put(i, new LinkedHashMap<>(16, 0.75f, true));;
-        }
-        myPrint("Out Set after handling Invoke statement");
-        myPrint(out);
-
-        if (invoke instanceof VirtualInvokeExpr) {
-            VirtualInvokeExpr vie = (VirtualInvokeExpr) invoke;
-
-            // Base object (the receiver)
-            Local base = (Local) vie.getBase();
-
-            // Method being called
-            SootMethod method = vie.getMethod();
-
-            // Arguments
-            SootMethod target = vie.getMethod();
-
-
-            // Skip unsafe cases
-            if (!target.isConcrete()) return;
-            if (target.getDeclaringClass().isInterface()) return;
-
-            Set<Integer> bases = in.sMap.getOrDefault(base, new HashSet<>());
-            Set<Type> types = new HashSet<>();
-            for(Integer b : bases)
-            {
-                if(in.objIdToClassMap.containsKey(b))
-                    types.add(in.objIdToClassMap.get(b));
-            }
-            if(types.size() == 1)
-            {
-                System.out.println("This is inlineable");
-                Type t = types.iterator().next();
-                SootClass concreteClass = ((RefType) t).getSootClass();
-
-                // Make sure the method actually exists in this class
-                if (!concreteClass.declaresMethod(method.getSubSignature())) return;
-
-                SootMethod resolved = concreteClass.getMethod(method.getSubSignature());
-
-                // Set the refined method reference
-                vie.setMethodRef(resolved.makeRef());
-
-                this.inlinableMap.put(stmt, true);
-                isInlinable = true;
-            }
-            
-        }
-
-    }
 
     @Override
     protected void flowThrough(Pgraph in, Unit stmt, Pgraph out) {
@@ -459,14 +467,17 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         myPrint(stmt);
         if (stmt instanceof JInvokeStmt)
         {
-            handleInvoke(in, (JInvokeStmt) stmt, out);
+            myPrint("Invoke statement found: " + stmt);
+            handleInvokeExpr(in, stmt, ((JInvokeStmt) stmt).getInvokeExpr(), out);
         }
         if (stmt instanceof JIdentityStmt)
         {
+            myPrint("Identity statement found: " + stmt);
             handleIdentityStmt((JIdentityStmt) stmt, out);
         }
         if (stmt instanceof JAssignStmt)
         {
+            myPrint("Assign statement found: " + stmt);
             handleAssignStmt(in, (JAssignStmt) stmt, out);
         }
         myPrint("=======================");

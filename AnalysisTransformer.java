@@ -28,18 +28,18 @@ public class AnalysisTransformer extends SceneTransformer {
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
-        System.out.println("Starting transformation...");
-        Boolean isInlinable = false;
-        do
+        myPrint("Starting transformation...");
+        Boolean isInlinable = true;
+        while(isInlinable)
         {
             for(SootClass sc : Scene.v().getApplicationClasses()) {
                 for(SootMethod sm : sc.getMethods()){
-                    System.out.println("Function to be analysed"+sm);
+                    myPrint("Function to be analysed"+sm);
                     Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
                     isInlinable = inlinestuff(a);
                 }
             }
-        }while(isInlinable);
+        }
     }
 
     boolean inlinestuff(Analysis analysis)
@@ -66,7 +66,7 @@ public class AnalysisTransformer extends SceneTransformer {
                 for(SootMethod m : comp)
                 {
                     recursiveMethods.add(m);
-                }
+                } 
             } else {
                 SootMethod m = comp.get(0);
 
@@ -79,8 +79,32 @@ public class AnalysisTransformer extends SceneTransformer {
                 }
             }
         }
-        System.out.println(components);
-        System.out.println("Starting transformation...");
+
+        // Boolean keep_searching = true;
+        // while(keep_searching){
+        //     keep_searching = false;
+            for(SootMethod m: recursiveMethods){
+                Boolean has_self_loop = false;
+                Iterator<Edge> it = cg.edgesOutOf(m);
+                while (it.hasNext()) {
+                    if (it.next().tgt() == m) {
+                        has_self_loop = true;
+                    }
+                }
+                if(has_self_loop) continue;
+                else{
+                    Integer size_m = m.getActiveBody().getUnits().size();
+                    if(size_m < Config.INLINE_THRESHOLD){
+                        recursiveMethods.remove(m);
+                        // keep_searching = true;
+                        break;
+                    }
+                }
+            }
+        // }
+
+        myPrint(components);
+        myPrint("Starting transformation...");
         for(SootClass sc : Scene.v().getApplicationClasses()) {
             for(SootMethod sm : sc.getMethods()) {
                 Chain<Unit> units = sm.retrieveActiveBody().getUnits();
@@ -100,23 +124,30 @@ public class AnalysisTransformer extends SceneTransformer {
                                 // Skip unsafe cases
                                 if (!target.isConcrete()) continue;
                                 if (target.getDeclaringClass().isInterface()) continue;
-                                
-                                if(analysis.inlinableMap.containsKey(u) && !recursiveMethods.contains(target) && target.getActiveBody().getUnits().size() < 30)
+                                if(analysis.inlinableMap.containsKey(u) && !recursiveMethods.contains(target) && target.getActiveBody().getUnits().size() < Config.INLINE_THRESHOLD)
                                 {
                                     try {
                                         // Inline the call site
                                         SiteInliner.inlineSite(target, stmt, sm);
                                         wasInlinable = true;
 
-                                        System.out.println("Inlined: " + target.getSignature());
+                                        myPrint("Inlined: " + target.getSignature() + " at call site: " + stmt);
 
                                     } catch (Exception e) {
-                                        System.out.println("Failed to inline: " + target.getSignature());
+                                        myPrint("Failed to inline: " + target.getSignature());
                                     }
                                 }
                                 else
                                 {
-                                    System.out.println("Did not Inline : " + target.getSignature());
+                                    // print reason for not inling: non inlinable or recursive or too big
+                                    if(analysis.inlinableMap.containsKey(u))
+                                    {
+                                        myPrint("Did not Inline : " + target.getSignature() + " because of " + (recursiveMethods.contains(target) ? "recursion" : "size = " + target.getActiveBody().getUnits().size())    );
+                                    }
+                                    else
+                                    {
+                                        myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt);
+                                    }
                                 }
                             }
                         }

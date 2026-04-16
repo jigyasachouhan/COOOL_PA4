@@ -1,5 +1,6 @@
 import java.util.*;
 
+import polyglot.ast.Call;
 import soot.*;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.BackwardFlowAnalysis;
@@ -15,10 +16,12 @@ import soot.jimple.*;
 public class AnalysisTransformer extends SceneTransformer {
 
     Map<Unit, Boolean> inlinableMap;
+    CallGraph cg;
 
     public AnalysisTransformer()
     {
         inlinableMap = new HashMap<>();
+
     }
 
     public void myPrint(Object toPrint)
@@ -28,25 +31,34 @@ public class AnalysisTransformer extends SceneTransformer {
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
-        myPrint("Starting transformation...");
+        cg = Scene.v().getCallGraph();
+        myPrint("Starting Analysis...");
+        for(SootClass sc : Scene.v().getApplicationClasses()) {
+            for(SootMethod sm : sc.getMethods()){
+                myPrint("Function to be analysed for the first time "+sm);
+                Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
+            }
+        }
         Boolean isInlinable = true;
         while(isInlinable)
         {
+            Boolean smthInlinedThistime = false;
             for(SootClass sc : Scene.v().getApplicationClasses()) {
                 for(SootMethod sm : sc.getMethods()){
                     myPrint("Function to be analysed"+sm);
                     Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
-                    isInlinable = inlinestuff(a);
+                    smthInlinedThistime |= inlinestuff(a);
                 }
             }
+            isInlinable = smthInlinedThistime;
         }
     }
 
     boolean inlinestuff(Analysis analysis)
     {
-        CallGraph cg = Scene.v().getCallGraph();
         Boolean wasInlinable = false;
         Set<SootMethod> recursiveMethods = new HashSet<>();
+       
         SootMethodFilter filter = new SootMethodFilter() {
             @Override
             public boolean want(SootMethod m)
@@ -60,6 +72,7 @@ public class AnalysisTransformer extends SceneTransformer {
         StronglyConnectedComponentsFast<SootMethod> scc = new StronglyConnectedComponentsFast<>(graph);
 
         List<List<SootMethod>> components = scc.getComponents();
+        myPrint("Components found: " + components);
         for (List<SootMethod> comp : components) {
             if (comp.size() > 1) {
                 // all methods here are recursive
@@ -80,30 +93,25 @@ public class AnalysisTransformer extends SceneTransformer {
             }
         }
 
-        // Boolean keep_searching = true;
-        // while(keep_searching){
-        //     keep_searching = false;
-            for(SootMethod m: recursiveMethods){
-                Boolean has_self_loop = false;
-                Iterator<Edge> it = cg.edgesOutOf(m);
-                while (it.hasNext()) {
-                    if (it.next().tgt() == m) {
-                        has_self_loop = true;
-                    }
-                }
-                if(has_self_loop) continue;
-                else{
-                    Integer size_m = m.getActiveBody().getUnits().size();
-                    if(size_m < Config.INLINE_THRESHOLD){
-                        recursiveMethods.remove(m);
-                        // keep_searching = true;
-                        break;
-                    }
+        for(SootMethod m: recursiveMethods){
+            myPrint("Recursive method being checked for loop: " + m.getSignature());
+            Boolean has_self_loop = false;
+            Iterator<Edge> it = cg.edgesOutOf(m);
+            while (it.hasNext()) {
+                if (it.next().tgt() == m) {
+                    has_self_loop = true;
                 }
             }
-        // }
+            if(has_self_loop){
+                myPrint("Self looped method : " + m.getSignature());
+            }
+            else{
+                myPrint("Removed method : " + m.getSignature());
+                recursiveMethods.remove(m);
+                break;
+            }
+        }
 
-        myPrint(components);
         myPrint("Starting transformation...");
         for(SootClass sc : Scene.v().getApplicationClasses()) {
             for(SootMethod sm : sc.getMethods()) {
@@ -130,8 +138,29 @@ public class AnalysisTransformer extends SceneTransformer {
                                         // Inline the call site
                                         SiteInliner.inlineSite(target, stmt, sm);
                                         wasInlinable = true;
+                                        
+                                        // Remove edge from sm to target in call graph
+                                        List<Edge> edgesToRemove = new ArrayList<>();
+                                        Iterator<Edge> edgeIt = cg.edgesOutOf(sm);
+                                        while(edgeIt.hasNext()) {
+                                            Edge e = edgeIt.next();
+                                            if(e.tgt() == target) {
+                                                edgesToRemove.add(e);
+                                            }
+                                        }
+                                        for(Edge e : edgesToRemove) {
+                                            cg.removeEdge(e);
+                                        }
 
-                                        myPrint("Inlined: " + target.getSignature() + " at call site: " + stmt);
+                                        // Add edges from sm to all methods called by target
+                                        Iterator<Edge> newEdgesIt = cg.edgesOutOf(target);
+                                        while(newEdgesIt.hasNext()) {
+                                            Edge e = newEdgesIt.next();
+                                            Edge newEdge = new Edge(sm, stmt, e.tgt(), e.kind());
+                                            cg.addEdge(newEdge);
+                                        }
+
+                                        myPrint("Inlined: " + target.getSignature() + " at call site: " + stmt + " in method: " + sm.getSignature());
 
                                     } catch (Exception e) {
                                         myPrint("Failed to inline: " + target.getSignature());
@@ -146,7 +175,7 @@ public class AnalysisTransformer extends SceneTransformer {
                                     }
                                     else
                                     {
-                                        myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt);
+                                        myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt + " in method: " + sm.getSignature() + " with reason : " + (analysis.inlinableMap.containsKey(u) ? "non inlinable" : "not analyzed yet") );
                                     }
                                 }
                             }

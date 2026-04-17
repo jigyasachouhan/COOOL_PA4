@@ -17,11 +17,14 @@ public class AnalysisTransformer extends SceneTransformer {
 
     Map<Unit, Boolean> inlinableMap;
     CallGraph cg;
+    Map<SootMethod, SootMethod> staticisedMetods;
+    Map<SootMethod, Integer> incomingMap;
 
     public AnalysisTransformer()
     {
         inlinableMap = new HashMap<>();
-
+        staticisedMetods = new HashMap<>();
+        incomingMap = new HashMap<>();
     }
 
     public void myPrint(Object toPrint)
@@ -32,11 +35,56 @@ public class AnalysisTransformer extends SceneTransformer {
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
         cg = Scene.v().getCallGraph();
+        Map<SootMethod, Integer> incomingMap = new HashMap<>();
+
+        // initialize
+        for (SootClass sc : Scene.v().getApplicationClasses()) {
+            for (SootMethod sm : sc.getMethods()) {
+                incomingMap.put(sm, 0);
+            }
+        }
+
+        for (SootClass sc : Scene.v().getApplicationClasses()) {
+            for (SootMethod sm : sc.getMethods()) {
+
+                if (!sm.hasActiveBody()) continue;
+
+                for (Unit u : sm.getActiveBody().getUnits()) {
+                    if (!(u instanceof Stmt)) continue;
+
+                    Stmt stmt = (Stmt) u;
+
+                    if (stmt.containsInvokeExpr()) {
+                        InvokeExpr ie = stmt.getInvokeExpr();
+
+                        // all possible targets of this call site
+                        List<SootMethod> targets = new ArrayList<>();
+                        if (ie instanceof VirtualInvokeExpr) {
+                            VirtualInvokeExpr vie = (VirtualInvokeExpr) ie;
+                            for (Iterator<Edge> it = cg.edgesOutOf(sm); it.hasNext();) {
+                                Edge e = it.next();
+                                if (e.src() == sm && e.srcUnit() == stmt) {
+                                    targets.add(e.tgt());
+                                }                            }
+                        } else {
+                            targets.add(ie.getMethod());
+                        }
+
+                        // increment count
+                        for (SootMethod target : targets) {
+                            incomingMap.put(target,
+                                incomingMap.getOrDefault(target, 0) + 1);
+                        }
+                    }
+                }
+            }
+        }
+
         myPrint("Starting Analysis...");
         for(SootClass sc : Scene.v().getApplicationClasses()) {
             for(SootMethod sm : sc.getMethods()){
                 myPrint("Function to be analysed for the first time "+sm);
-                Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
+                new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
             }
         }
         Boolean isInlinable = true;
@@ -57,7 +105,7 @@ public class AnalysisTransformer extends SceneTransformer {
     boolean inlinestuff(Analysis analysis)
     {
         Boolean wasInlinable = false;
-        Set<SootMethod> recursiveMethods = new HashSet<>();
+        Set<SootMethod> recursiveMethods = new LinkedHashSet<>();
        
         SootMethodFilter filter = new SootMethodFilter() {
             @Override
@@ -72,6 +120,38 @@ public class AnalysisTransformer extends SceneTransformer {
         StronglyConnectedComponentsFast<SootMethod> scc = new StronglyConnectedComponentsFast<>(graph);
 
         List<List<SootMethod>> components = scc.getComponents();
+        
+        for(List<SootMethod> comp : components) {
+            comp.sort((c1, c2) -> {
+                // 1. sort by size of function (smaller first)
+                int sizeCmp = Integer.compare(c1.getActiveBody().getUnits().size(), c2.getActiveBody().getUnits().size());
+                if (sizeCmp != 0) return sizeCmp;
+                // 2. if sizes are equal, sort by total incoming edges (descending)
+                int score1 = incomingMap.getOrDefault(c1, 0);
+                int score2 = incomingMap.getOrDefault(c2, 0);
+                if(score1 != score2) return Integer.compare(score2, score1); // reverse
+                // 3. if still equal, sort by method signature (lexicographically)
+                String sig1 = c1.getSignature();
+                String sig2 = c2.getSignature();
+                return sig1.compareTo(sig2);
+            });
+        }
+
+        components.sort((comp1, comp2) -> {
+            // 1. sort by size of biggest function in the component (bigger first)
+            int size1 = comp1.get(0).getActiveBody().getUnits().size();
+            int size2 = comp2.get(0).getActiveBody().getUnits().size();
+            if (size1 != size2) return Integer.compare(size2, size1);
+            // 2. if sizes are equal, sort by total incoming edges of the biggest function (descending)
+            int score1 = incomingMap.getOrDefault(comp1.get(0), 0);
+            int score2 = incomingMap.getOrDefault(comp2.get(0), 0);
+            if(score1 != score2) return Integer.compare(score2, score1);
+            // 3. if still equal, sort by method signature of the biggest function (lexicographically)
+            String sig1 = comp1.get(0).getSignature();
+            String sig2 = comp2.get(0).getSignature();
+            return sig1.compareTo(sig2);
+        });
+
         myPrint("Components found: " + components);
         for (List<SootMethod> comp : components) {
             if (comp.size() > 1) {
@@ -93,6 +173,7 @@ public class AnalysisTransformer extends SceneTransformer {
             }
         }
 
+        myPrint("Recursive methods: " + recursiveMethods);
         for(SootMethod m: recursiveMethods){
             myPrint("Recursive method being checked for loop: " + m.getSignature());
             Boolean has_self_loop = false;
@@ -113,8 +194,9 @@ public class AnalysisTransformer extends SceneTransformer {
         }
 
         myPrint("Starting transformation...");
-        for(SootClass sc : Scene.v().getApplicationClasses()) {
-            for(SootMethod sm : sc.getMethods()) {
+        for(SootClass sc : new ArrayList<>(Scene.v().getApplicationClasses())) {
+            List<SootMethod> methods = new ArrayList<>(sc.getMethods());
+            for(SootMethod sm : methods) {
                 Chain<Unit> units = sm.retrieveActiveBody().getUnits();
                 Iterator<Unit> unitIt = units.snapshotIterator();
                 while(unitIt.hasNext()) {
@@ -160,11 +242,89 @@ public class AnalysisTransformer extends SceneTransformer {
                                             cg.addEdge(newEdge);
                                         }
 
-                                        myPrint("Inlined: " + target.getSignature() + " at call site: " + stmt + " in method: " + sm.getSignature());
+                                        System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
 
                                     } catch (Exception e) {
                                         myPrint("Failed to inline: " + target.getSignature());
                                     }
+                                }
+                                else if (analysis.inlinableMap.containsKey(u) && !recursiveMethods.contains(target) && target.getActiveBody().getUnits().size() >= Config.INLINE_THRESHOLD)
+                                {
+                                    myPrint("Gonna try static-ising");
+                                    SootMethod oldMethod = target;
+
+                                    List<Type> newParams = new ArrayList<>();
+                                    newParams.add(oldMethod.getDeclaringClass().getType()); // this param
+                                    newParams.addAll(oldMethod.getParameterTypes());
+
+                                    SootMethod newMethod;
+                                    if(staticisedMetods.containsKey(oldMethod))
+                                    {
+                                        newMethod = staticisedMetods.get(oldMethod);
+                                        myPrint("Method already staticised: " + oldMethod.getSignature());
+                                    }
+                                    else{
+                                        newMethod = new SootMethod(
+                                            oldMethod.getName() + "_static",
+                                            newParams,
+                                            oldMethod.getReturnType(),
+                                            Modifier.STATIC | Modifier.PUBLIC
+                                        );
+
+                                        oldMethod.getDeclaringClass().addMethod(newMethod);
+
+                                        Body oldBody = oldMethod.retrieveActiveBody();
+                                        Body newBody = Jimple.v().newBody(newMethod);
+                                        newMethod.setActiveBody(newBody);
+
+                                        newBody.importBodyContentsFrom(oldBody);
+
+                                        for (Unit u_newbody : newBody.getUnits()) {
+                                            if (u_newbody instanceof IdentityStmt) {
+                                                IdentityStmt id = (IdentityStmt) u_newbody;
+
+                                                if (id.getRightOp() instanceof ThisRef) {
+                                                    id.setRightOp(Jimple.v().newParameterRef(
+                                                        oldMethod.getDeclaringClass().getType(), -1
+                                                    ));
+                                                }
+                                            }
+                                        }
+
+                                        for (Unit u_newbody : newBody.getUnits()) {
+                                            if (u_newbody instanceof IdentityStmt) {
+                                                IdentityStmt id = (IdentityStmt) u_newbody;
+
+                                                if (id.getRightOp() instanceof ParameterRef) {
+                                                    ParameterRef pr = (ParameterRef) id.getRightOp();
+
+                                                    id.setRightOp(Jimple.v().newParameterRef(
+                                                        pr.getType(),
+                                                        pr.getIndex() + 1
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                        staticisedMetods.put(oldMethod, newMethod);
+                                    }
+                                
+                                    Local base = (Local) vie.getBase();
+                                    List<Value> args = new ArrayList<>(vie.getArgs());
+                                    args.add(0, base);
+                                    StaticInvokeExpr sie = Jimple.v().newStaticInvokeExpr(
+                                        newMethod.makeRef(),
+                                        args
+                                    );
+
+                                    if (stmt instanceof AssignStmt) {
+                                        AssignStmt assign = (AssignStmt) stmt;
+                                        assign.setRightOp(sie);
+                                    } else if (stmt instanceof InvokeStmt) {
+                                        InvokeStmt inv = (InvokeStmt) stmt;
+                                        inv.setInvokeExpr(sie);
+                                    }
+
+                                    System.out.println("Method " + target.getSignature() + " is too big, converted to static call: " + newMethod.getSignature() + " in method: " + sm.getSignature());
                                 }
                                 else
                                 {

@@ -1,2 +1,2 @@
 clean:
-	rm -rf sootOutput ./testcases/*/*.class *.class ./OriginalOutput *.txt
+	rm -rf sootOutput ./testcases/*/*.class *.class ./OriginalOutput 

@@ -39,7 +39,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
 
     void myPrint(Object toPrint)
     {
-        System.out.println(toPrint.toString());
+        // System.out.println(toPrint.toString());
     }
 
     protected int getobjID()

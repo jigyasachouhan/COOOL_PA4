@@ -4,14 +4,12 @@ public class Test {
 	}
 	public static void run() {
 		Animal b = new Animal();
-		// b.fib(5);
-		// b.fib2(5);
-		// b.fib3(5);
-		// b.fib4(5);
+		System.out.println(b.fib(5));
+		System.out.println(b.fib2(5));
+		System.out.println(b.fib3(5));
+		System.out.println(b.fib4(5));
 
-        for(int i=0; i<100; i++){
-			b.call(i);
-		}
+		System.out.println(b.call(100));
 
 	}
 }

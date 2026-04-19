@@ -15,6 +15,7 @@ import soot.jimple.internal.JInvokeStmt;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 // import Pgraph.*;
+import soot.util.Chain;
 
 
 
@@ -66,11 +67,26 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
             ParameterRef pr = (ParameterRef)  rhs;
             Type tp = pr.getType();
             out.objIdToClassMap.put(ID, tp);
+            if(tp instanceof RefType){
+                SootClass sc = ((RefType) tp).getSootClass();
+                List<SootClass> subClasses = Scene.v().getActiveHierarchy().getSubclassesOf(sc);
+                for(SootClass sub : subClasses)            {
+                    out.objIdToClassMap.put(getobjID(), sub.getType());
+                }
+            }
         }
         if(rhs instanceof ThisRef){
             ThisRef tr = (ThisRef)  rhs;
             Type tp = tr.getType();
             out.objIdToClassMap.put(ID, tp);
+            // add all child types of tp, because of polymorphism
+            if(tp instanceof RefType){
+                SootClass sc = ((RefType) tp).getSootClass();
+                List<SootClass> subClasses = Scene.v().getActiveHierarchy().getSubclassesOf(sc);
+                for(SootClass sub : subClasses)            {
+                    out.objIdToClassMap.put(getobjID(), sub.getType());
+                }
+            }
         }
         myPrint("Out Set after handling identity statement");
         myPrint(out);
@@ -87,10 +103,10 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         }
         if (invoke.getArgs() != null)
         {
-        for (Value arg : invoke.getArgs())
-        {
-            collectReachable(arg, out, killSet);
-        }
+            for (Value arg : invoke.getArgs())
+            {
+                collectReachable(arg, out, killSet);
+            }
         }
         myPrint("Out Set before handling Invoke statement");
         myPrint(out);
@@ -101,7 +117,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         }
         myPrint("Out Set after handling Invoke statement");
         myPrint(out);
-
+        myPrint("Am i virtual invoke? " + (invoke instanceof VirtualInvokeExpr));
         if (invoke instanceof VirtualInvokeExpr) {
             VirtualInvokeExpr vie = (VirtualInvokeExpr) invoke;
 
@@ -464,6 +480,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         // myPrint("Hello?");
         myPrint("=======================");
         myPrint("handingl statement");
+        myPrint(in);
         myPrint(stmt);
         if (stmt instanceof JInvokeStmt)
         {
@@ -480,6 +497,8 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
             myPrint("Assign statement found: " + stmt);
             handleAssignStmt(in, (JAssignStmt) stmt, out);
         }
+        myPrint("out::");
+        myPrint(out);
         myPrint("=======================");
     }
 
@@ -493,6 +512,7 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         // myPrint(arg1);
         arg1.hMap = arg0.getHmapcopy();
         arg1.sMap = arg0.getSmapcopy();
+        arg1.objIdToClassMap = arg0.getobjmapcopy();
     }
 
     @Override
@@ -511,17 +531,26 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         {
             out.hMap = in2.getHmapcopy();
             out.sMap = in2.getSmapcopy();
+            out.objIdToClassMap = in2.getobjmapcopy();
         }
         else if (empty(in2))
         {
             out.hMap = in1.getHmapcopy();
             out.sMap = in1.getSmapcopy();
+            out.objIdToClassMap = in1.getobjmapcopy();
         }
         else
         {
         out.hMap = mergeHmap(in1.hMap, in2.hMap);
         out.sMap = mergeSmap(in1.sMap, in2.sMap);
+        // take union
+        out.objIdToClassMap = new LinkedHashMap<>(16, 0.75f, true);
+        out.objIdToClassMap.putAll(in1.objIdToClassMap);
+        out.objIdToClassMap.putAll(in2.objIdToClassMap);
         }
+            myPrint("Result of Merge");
+        myPrint(out);
+        myPrint("==================================");
     }
 
     private boolean empty (Pgraph p)

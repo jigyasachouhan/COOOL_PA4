@@ -19,17 +19,19 @@ public class AnalysisTransformer extends SceneTransformer {
     CallGraph cg;
     Map<SootMethod, SootMethod> staticisedMetods;
     Map<SootMethod, Integer> incomingMap;
+    Set<SootMethod> allMethods;
 
     public AnalysisTransformer()
     {
         inlinableMap = new HashMap<>();
         staticisedMetods = new HashMap<>();
         incomingMap = new HashMap<>();
+        allMethods = new LinkedHashSet<>();
     }
 
     public void myPrint(Object toPrint)
     {
-        System.out.println(toPrint.toString());
+        // System.out.println(toPrint.toString());
     }
 
     @Override
@@ -41,15 +43,74 @@ public class AnalysisTransformer extends SceneTransformer {
         for (SootClass sc : Scene.v().getApplicationClasses()) {
             for (SootMethod sm : sc.getMethods()) {
                 incomingMap.put(sm, 0);
+                allMethods.add(sm);
             }
         }
 
-        for (SootClass sc : Scene.v().getApplicationClasses()) {
-            for (SootMethod sm : sc.getMethods()) {
+        for (SootMethod sm : allMethods) {
+            if (!sm.hasActiveBody()) continue;
 
-                if (!sm.hasActiveBody()) continue;
+            for (Unit u : sm.getActiveBody().getUnits()) {
+                if (!(u instanceof Stmt)) continue;
 
-                for (Unit u : sm.getActiveBody().getUnits()) {
+                Stmt stmt = (Stmt) u;
+
+                if (stmt.containsInvokeExpr()) {
+                    InvokeExpr ie = stmt.getInvokeExpr();
+
+                    // all possible targets of this call site
+                    List<SootMethod> targets = new ArrayList<>();
+                    if (ie instanceof VirtualInvokeExpr) {
+                        for (Iterator<Edge> it = cg.edgesOutOf(sm); it.hasNext();) {
+                            Edge e = it.next();
+                            if (e.src() == sm && e.srcUnit() == stmt) {
+                                targets.add(e.tgt());
+                            }                            }
+                    } else {
+                        targets.add(ie.getMethod());
+                    }
+
+                    // increment count
+                    for (SootMethod target : targets) {
+                        incomingMap.put(target,
+                            incomingMap.getOrDefault(target, 0) + 1);
+                    }
+                }
+            }
+        }
+
+        myPrint("Starting Analysis...");
+        for(SootMethod sm : allMethods){
+            myPrint("Function to be analysed for the first time "+sm);
+            new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
+        }
+        Boolean isInlinable = true;
+        while(isInlinable)
+        {
+            Boolean smthInlinedThistime = false;
+            for(SootMethod sm : new LinkedHashSet<>(allMethods)){
+                myPrint("Function to be analysed"+sm);
+                Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
+                smthInlinedThistime |= inlinestuff(a);
+            }
+            isInlinable = smthInlinedThistime;
+
+            Set<SootMethod> reachable = new LinkedHashSet<>();
+            Queue<SootMethod> worklist = new LinkedList<>();
+
+            // Get main method
+            SootMethod mainMethod = Scene.v().getMainMethod();
+
+            worklist.add(mainMethod);
+            reachable.add(mainMethod);
+
+            while (!worklist.isEmpty()) {
+                SootMethod current = worklist.poll();
+
+                List<SootMethod> targets = new ArrayList<>();
+                Iterator<Unit> unitiIterator= current.getActiveBody().getUnits().snapshotIterator();
+                while(unitiIterator.hasNext()) {
+                    Unit u = unitiIterator.next();
                     if (!(u instanceof Stmt)) continue;
 
                     Stmt stmt = (Stmt) u;
@@ -57,146 +118,52 @@ public class AnalysisTransformer extends SceneTransformer {
                     if (stmt.containsInvokeExpr()) {
                         InvokeExpr ie = stmt.getInvokeExpr();
 
-                        // all possible targets of this call site
-                        List<SootMethod> targets = new ArrayList<>();
                         if (ie instanceof VirtualInvokeExpr) {
-                            VirtualInvokeExpr vie = (VirtualInvokeExpr) ie;
-                            for (Iterator<Edge> it = cg.edgesOutOf(sm); it.hasNext();) {
+                            SootMethod tgt=null;
+                            for (Iterator<Edge> it = cg.edgesOutOf(current); it.hasNext();) {
                                 Edge e = it.next();
-                                if (e.src() == sm && e.srcUnit() == stmt) {
-                                    targets.add(e.tgt());
-                                }                            }
+                                if (e.src() == current && e.srcUnit() == stmt) {
+                                    tgt = e.tgt();
+                                    if(!ie.getMethod().isJavaLibraryMethod())   
+                                        targets.add(tgt);
+                                }
+                            }
+                                
                         } else {
-                            targets.add(ie.getMethod());
-                        }
-
-                        // increment count
-                        for (SootMethod target : targets) {
-                            incomingMap.put(target,
-                                incomingMap.getOrDefault(target, 0) + 1);
+                            if(!ie.getMethod().isJavaLibraryMethod())   
+                                targets.add(ie.getMethod());
                         }
                     }
                 }
+                for(SootMethod target : targets) {
+
+                    if (!reachable.contains(target) && target.isConcrete()) {
+                        reachable.add(target);
+                        worklist.add(target);
+                    }
+                }
+            }
+
+
+            for (SootMethod sm : new LinkedHashSet<>(allMethods)) {
+                if (!reachable.contains(sm) && !sm.isMain() && sm.isConcrete()) {
+                    System.out.println("Removing unreachable method: " + sm.getSignature());
+
+                    sm.getDeclaringClass().removeMethod(sm);
+                    sm.setActiveBody(null);
+                    allMethods.remove(sm);
+                }
             }
         }
 
-        myPrint("Starting Analysis...");
-        for(SootClass sc : Scene.v().getApplicationClasses()) {
-            for(SootMethod sm : sc.getMethods()){
-                myPrint("Function to be analysed for the first time "+sm);
-                new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
-            }
-        }
-        Boolean isInlinable = true;
-        while(isInlinable)
-        {
-            Boolean smthInlinedThistime = false;
-            for(SootClass sc : Scene.v().getApplicationClasses()) {
-                for(SootMethod sm : sc.getMethods()){
-                    myPrint("Function to be analysed"+sm);
-                    Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
-                    smthInlinedThistime |= inlinestuff(a);
-                }
-            }
-            isInlinable = smthInlinedThistime;
-        }
     }
 
     boolean inlinestuff(Analysis analysis)
     {
         Boolean wasInlinable = false;
-        Set<SootMethod> recursiveMethods = new LinkedHashSet<>();
-       
-        SootMethodFilter filter = new SootMethodFilter() {
-            @Override
-            public boolean want(SootMethod m)
-            {
-                if(m.isJavaLibraryMethod())
-                    return false;
-                return true;
-            }
-        };
-        DirectedGraph<SootMethod> graph = new DirectedCallGraph(cg,filter,Scene.v().getEntryPoints().iterator(),false);
-        StronglyConnectedComponentsFast<SootMethod> scc = new StronglyConnectedComponentsFast<>(graph);
-
-        List<List<SootMethod>> components = scc.getComponents();
         
-        for(List<SootMethod> comp : components) {
-            comp.sort((c1, c2) -> {
-                // 1. sort by size of function (smaller first)
-                int sizeCmp = Integer.compare(c1.getActiveBody().getUnits().size(), c2.getActiveBody().getUnits().size());
-                if (sizeCmp != 0) return sizeCmp;
-                // 2. if sizes are equal, sort by total incoming edges (descending)
-                int score1 = incomingMap.getOrDefault(c1, 0);
-                int score2 = incomingMap.getOrDefault(c2, 0);
-                if(score1 != score2) return Integer.compare(score2, score1); // reverse
-                // 3. if still equal, sort by method signature (lexicographically)
-                String sig1 = c1.getSignature();
-                String sig2 = c2.getSignature();
-                return sig1.compareTo(sig2);
-            });
-        }
-
-        components.sort((comp1, comp2) -> {
-            // 1. sort by size of biggest function in the component (bigger first)
-            int size1 = comp1.get(0).getActiveBody().getUnits().size();
-            int size2 = comp2.get(0).getActiveBody().getUnits().size();
-            if (size1 != size2) return Integer.compare(size2, size1);
-            // 2. if sizes are equal, sort by total incoming edges of the biggest function (descending)
-            int score1 = incomingMap.getOrDefault(comp1.get(0), 0);
-            int score2 = incomingMap.getOrDefault(comp2.get(0), 0);
-            if(score1 != score2) return Integer.compare(score2, score1);
-            // 3. if still equal, sort by method signature of the biggest function (lexicographically)
-            String sig1 = comp1.get(0).getSignature();
-            String sig2 = comp2.get(0).getSignature();
-            return sig1.compareTo(sig2);
-        });
-
-        myPrint("Components found: " + components);
-        for (List<SootMethod> comp : components) {
-            if (comp.size() > 1) {
-                // all methods here are recursive
-                for(SootMethod m : comp)
-                {
-                    recursiveMethods.add(m);
-                } 
-            } else {
-                SootMethod m = comp.get(0);
-
-                // check self-loop
-                Iterator<Edge> it = cg.edgesOutOf(m);
-                while (it.hasNext()) {
-                    if (it.next().tgt() == m) {
-                        recursiveMethods.add(m);
-                    }
-                }
-            }
-        }
-
-        myPrint("Recursive methods: " + recursiveMethods);
-        for(SootMethod m: recursiveMethods){
-            myPrint("Recursive method being checked for loop: " + m.getSignature());
-            Boolean has_self_loop = false;
-            Iterator<Edge> it = cg.edgesOutOf(m);
-            while (it.hasNext()) {
-                if (it.next().tgt() == m) {
-                    has_self_loop = true;
-                }
-            }
-            if(has_self_loop){
-                myPrint("Self looped method : " + m.getSignature());
-            }
-            else{
-                myPrint("Removed method : " + m.getSignature());
-                recursiveMethods.remove(m);
-                break;
-            }
-        }
-
         myPrint("Starting transformation...");
-        for(SootClass sc : new ArrayList<>(Scene.v().getApplicationClasses())) {
-            List<SootMethod> methods = new ArrayList<>(sc.getMethods());
-            for(SootMethod sm : methods) {
+        for(SootMethod sm : new LinkedHashSet<>(allMethods)){
                 Chain<Unit> units = sm.retrieveActiveBody().getUnits();
                 Iterator<Unit> unitIt = units.snapshotIterator();
                 while(unitIt.hasNext()) {
@@ -214,33 +181,13 @@ public class AnalysisTransformer extends SceneTransformer {
                                 // Skip unsafe cases
                                 if (!target.isConcrete()) continue;
                                 if (target.getDeclaringClass().isInterface()) continue;
-                                if(analysis.inlinableMap.containsKey(u) && !recursiveMethods.contains(target) && target.getActiveBody().getUnits().size() < Config.INLINE_THRESHOLD)
+                                if(analysis.inlinableMap.containsKey(u) && target.getActiveBody().getUnits().size() < Config.INLINE_THRESHOLD)
                                 {
                                     try {
                                         // Inline the call site
                                         SiteInliner.inlineSite(target, stmt, sm);
                                         wasInlinable = true;
                                         
-                                        // Remove edge from sm to target in call graph
-                                        List<Edge> edgesToRemove = new ArrayList<>();
-                                        Iterator<Edge> edgeIt = cg.edgesOutOf(sm);
-                                        while(edgeIt.hasNext()) {
-                                            Edge e = edgeIt.next();
-                                            if(e.tgt() == target) {
-                                                edgesToRemove.add(e);
-                                            }
-                                        }
-                                        for(Edge e : edgesToRemove) {
-                                            cg.removeEdge(e);
-                                        }
-
-                                        // Add edges from sm to all methods called by target
-                                        Iterator<Edge> newEdgesIt = cg.edgesOutOf(target);
-                                        while(newEdgesIt.hasNext()) {
-                                            Edge e = newEdgesIt.next();
-                                            Edge newEdge = new Edge(sm, stmt, e.tgt(), e.kind());
-                                            cg.addEdge(newEdge);
-                                        }
 
                                         System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
 
@@ -248,9 +195,11 @@ public class AnalysisTransformer extends SceneTransformer {
                                         myPrint("Failed to inline: " + target.getSignature());
                                     }
                                 }
-                                else if (analysis.inlinableMap.containsKey(u) && !recursiveMethods.contains(target) && target.getActiveBody().getUnits().size() >= Config.INLINE_THRESHOLD)
+                                else if (analysis.inlinableMap.containsKey(u) && target.getActiveBody().getUnits().size() >= Config.INLINE_THRESHOLD)
                                 {
                                     myPrint("Gonna try static-ising");
+                                    wasInlinable = true;
+
                                     SootMethod oldMethod = target;
 
                                     List<Type> newParams = new ArrayList<>();
@@ -306,6 +255,7 @@ public class AnalysisTransformer extends SceneTransformer {
                                             }
                                         }
                                         staticisedMetods.put(oldMethod, newMethod);
+                                        allMethods.add(newMethod);
                                     }
                                 
                                     Local base = (Local) vie.getBase();
@@ -324,24 +274,15 @@ public class AnalysisTransformer extends SceneTransformer {
                                         inv.setInvokeExpr(sie);
                                     }
 
-                                    System.out.println("Method " + target.getSignature() + " is too big, converted to static call: " + newMethod.getSignature() + " in method: " + sm.getSignature());
+                                    System.out.println("Staticized " + target.getSignature() + " -> " + newMethod.getSignature() + " in " + sm.getSignature());
                                 }
                                 else
                                 {
-                                    // print reason for not inling: non inlinable or recursive or too big
-                                    if(analysis.inlinableMap.containsKey(u))
-                                    {
-                                        myPrint("Did not Inline : " + target.getSignature() + " because of " + (recursiveMethods.contains(target) ? "recursion" : "size = " + target.getActiveBody().getUnits().size())    );
-                                    }
-                                    else
-                                    {
-                                        myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt + " in method: " + sm.getSignature() + " with reason : " + (analysis.inlinableMap.containsKey(u) ? "non inlinable" : "not analyzed yet") );
-                                    }
+                                     myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt + " in method: " + sm.getSignature());
                                 }
                             }
                         }
                     }
-            }
             }
         }
         return wasInlinable;

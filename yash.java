@@ -10,6 +10,6 @@ public class yash {
 		long end = System.nanoTime();
 		long duration = end - start;
 		long avg = duration / 10000;
-		System.out.println("Average execution time per iteration: " + avg + " nanoseconds");
+		System.err.println("Average execution time per iteration: " + avg + " nanoseconds");
 	}
 }

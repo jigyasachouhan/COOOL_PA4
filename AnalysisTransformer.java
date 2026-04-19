@@ -7,6 +7,7 @@ import soot.toolkits.scalar.BackwardFlowAnalysis;
 import soot.toolkits.scalar.FlowSet;
 import soot.jimple.toolkits.annotation.purity.DirectedCallGraph;
 import soot.jimple.toolkits.annotation.purity.SootMethodFilter;
+import soot.jimple.toolkits.callgraph.CHATransformer;
 import soot.jimple.toolkits.callgraph.CallGraph;
 import soot.jimple.toolkits.callgraph.Edge;
 import soot.jimple.toolkits.invoke.SiteInliner;
@@ -106,7 +107,7 @@ public class AnalysisTransformer extends SceneTransformer {
 
             while (!worklist.isEmpty()) {
                 SootMethod current = worklist.poll();
-
+                System.out.println("currently processing: " + current.getSignature());
                 List<SootMethod> targets = new ArrayList<>();
                 Iterator<Unit> unitiIterator= current.getActiveBody().getUnits().snapshotIterator();
                 while(unitiIterator.hasNext()) {
@@ -117,10 +118,15 @@ public class AnalysisTransformer extends SceneTransformer {
 
                     if (stmt.containsInvokeExpr()) {
                         InvokeExpr ie = stmt.getInvokeExpr();
-
+                        // System.out.println("Found call site: " + stmt + " in method: " + current.getSignature());
                         if (ie instanceof VirtualInvokeExpr) {
                             SootMethod tgt=null;
-                            for (Iterator<Edge> it = cg.edgesOutOf(current); it.hasNext();) {
+                            // System.out.println("it was a virtual invoke expr, looking for targets in the call graph out of" + current);
+                            Scene.v().releaseCallGraph();
+                            Scene.v().releasePointsToAnalysis(); // safe even if not using Spark
+                            CHATransformer.v().transform();
+                            CallGraph cg2 = Scene.v().getCallGraph();
+                            for (Iterator<Edge> it = cg2.edgesOutOf(current); it.hasNext();) {
                                 Edge e = it.next();
                                 if (e.src() == current && e.srcUnit() == stmt) {
                                     tgt = e.tgt();
@@ -147,7 +153,7 @@ public class AnalysisTransformer extends SceneTransformer {
 
             for (SootMethod sm : new LinkedHashSet<>(allMethods)) {
                 if (!reachable.contains(sm) && !sm.isMain() && sm.isConcrete()) {
-                    System.out.println("Removing unreachable method: " + sm.getSignature());
+                    // System.out.println("Removing unreachable method: " + sm.getSignature());
 
                     sm.getDeclaringClass().removeMethod(sm);
                     sm.setActiveBody(null);
@@ -189,7 +195,7 @@ public class AnalysisTransformer extends SceneTransformer {
                                         wasInlinable = true;
                                         
 
-                                        System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
+                                        // System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
 
                                     } catch (Exception e) {
                                         myPrint("Failed to inline: " + target.getSignature());
@@ -274,7 +280,7 @@ public class AnalysisTransformer extends SceneTransformer {
                                         inv.setInvokeExpr(sie);
                                     }
 
-                                    System.out.println("Staticized " + target.getSignature() + " -> " + newMethod.getSignature() + " in " + sm.getSignature());
+                                    // System.out.println("Staticized " + target.getSignature() + " -> " + newMethod.getSignature() + " in " + sm.getSignature());
                                 }
                                 else
                                 {

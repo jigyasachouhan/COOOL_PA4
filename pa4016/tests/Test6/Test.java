@@ -1,45 +1,17 @@
+// In a method, if argument is of a type exhibiting polymorphism (has child classes), points-to analysis considers the case 
+// where the object passed is of child class instead of given argument type
 public class Test {
 	public static void main(String[] args) {
-		run();
+        Animal examp = new Cat();
+		run(examp);
 	}
-	public static void run() {
-		Animal b = new Animal();
-		System.out.println(b.fib(5));
-		System.out.println(b.fib2(5));
-		System.out.println(b.fib3(5));
-		System.out.println(b.fib4(5));
-
-		System.out.println(b.call(100));
-
+	public static void run(Animal a) {
+		System.out.println(a.call(5));
 	}
 }
 
 
 class Animal {
-	int fib(int n)
-	{
-		if(n==1 || n ==0)
-			return 1;
-		return fib2(n-1) + fib4(n-2);
-	}
-	int fib2(int n)
-	{
-		if(n==1 || n ==0)
-			return 1;
-		return fib3(n-1) + fib3(n-2);
-	}
-	int fib3(int n)
-	{
-		if(n==1 || n ==0)
-			return 1;
-		return fib(n-1) + fib(n-2);
-	}
-	int fib4(int n)
-	{
-		if(n==1 || n ==0)
-			return 1;
-		return fib(n-1) + fib(n-2);
-	}
     public int call(int p){
         int ans = 0;
         for(int i = 0; i < 100; i++) {
@@ -77,6 +49,8 @@ class Animal {
 
 class Cat extends Animal
 {
-	
+	public int call(int p){
+        return p;
+    }
 }
 

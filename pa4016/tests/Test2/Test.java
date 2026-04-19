@@ -1,11 +1,14 @@
+// Big methods are replaced with static versions if target is singleton
 public class Test {
 	public static void main(String[] args) {
 		run();
 	}
 	public static void run() {
 		Animal b = new Animal();
-		int res = b.call(5);
-		System.out.println(res);
+		for(int i=0; i<100; i++){
+			int res = b.call(i);
+			System.out.println(res);
+		}
 	}
 }
 
@@ -40,8 +43,4 @@ class Animal {
 
 }
 
-class Cat extends Animal
-{
-	
-}
 

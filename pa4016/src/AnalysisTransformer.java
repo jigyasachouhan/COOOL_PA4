@@ -83,6 +83,7 @@ public class AnalysisTransformer extends SceneTransformer {
         myPrint("Starting Analysis...");
         for(SootMethod sm : allMethods){
             myPrint("Function to be analysed for the first time "+sm);
+            if(!sm.hasActiveBody()) continue;
             new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
         }
         Boolean isInlinable = true;
@@ -91,6 +92,7 @@ public class AnalysisTransformer extends SceneTransformer {
             Boolean smthInlinedThistime = false;
             for(SootMethod sm : new LinkedHashSet<>(allMethods)){
                 myPrint("Function to be analysed"+sm);
+                if(!sm.hasActiveBody()) continue;
                 Analysis a = new Analysis(new BriefUnitGraph(sm.getActiveBody()),inlinableMap);
                 smthInlinedThistime |= inlinestuff(a);
             }
@@ -107,7 +109,6 @@ public class AnalysisTransformer extends SceneTransformer {
 
             while (!worklist.isEmpty()) {
                 SootMethod current = worklist.poll();
-                System.out.println("currently processing: " + current.getSignature());
                 List<SootMethod> targets = new ArrayList<>();
                 Iterator<Unit> unitiIterator= current.getActiveBody().getUnits().snapshotIterator();
                 while(unitiIterator.hasNext()) {
@@ -170,6 +171,7 @@ public class AnalysisTransformer extends SceneTransformer {
         
         myPrint("Starting transformation...");
         for(SootMethod sm : new LinkedHashSet<>(allMethods)){
+            if(!sm.hasActiveBody()) continue;
                 Chain<Unit> units = sm.retrieveActiveBody().getUnits();
                 Iterator<Unit> unitIt = units.snapshotIterator();
                 while(unitIt.hasNext()) {
@@ -195,7 +197,7 @@ public class AnalysisTransformer extends SceneTransformer {
                                         wasInlinable = true;
                                         
 
-                                        // System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
+                                        System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
 
                                     } catch (Exception e) {
                                         myPrint("Failed to inline: " + target.getSignature());
@@ -280,12 +282,34 @@ public class AnalysisTransformer extends SceneTransformer {
                                         inv.setInvokeExpr(sie);
                                     }
 
-                                    // System.out.println("Staticized " + target.getSignature() + " -> " + newMethod.getSignature() + " in " + sm.getSignature());
+                                    System.out.println("Staticized " + target.getSignature() + " -> " + newMethod.getSignature() + " in " + sm.getSignature());
                                 }
                                 else
                                 {
                                      myPrint("Did not Inline : " + target.getSignature() + " because it is not inlinable at this call siteee " + stmt + " in method: " + sm.getSignature());
                                 }
+                            }
+                            else{
+                                // SootMethod target = ie.getMethod();
+                                // System.err.println("trying func: " + target.getSignature());
+                                // // Skip unsafe cases
+                                // if (!target.isConcrete()) continue;
+                                // if (target.isMain()) continue;
+                                // if (target.getDeclaringClass().isInterface()) continue;
+                                // if(target.getActiveBody().getUnits().size() < Config.INLINE_THRESHOLD)
+                                // {
+                                //     try {
+                                //         // Inline the call site
+                                //         SiteInliner.inlineSite(target, stmt, sm);
+                                //         wasInlinable = true;
+                                        
+
+                                //         System.out.println("Inlined: " + target.getSignature() + " in method: " + sm.getSignature());
+
+                                //     } catch (Exception e) {
+                                //         myPrint("Failed to inline: " + target.getSignature());
+                                //     }
+                                // }
                             }
                         }
                     }

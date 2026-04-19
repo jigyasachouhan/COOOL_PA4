@@ -11,7 +11,7 @@ import java.time.Instant;
 public class PA4 {
     public static void main(String[] args) {
         soot.G.reset();
-        String classPath = "./testcases/" + args[0]; //do not change this, as evaluation would have testcases under this directory
+        String classPath = "../tests/" + args[0]; 
         Boolean transform = Boolean.parseBoolean(args[1]);
         String output_Format = "class";
         Options.v().set_keep_line_number(true);

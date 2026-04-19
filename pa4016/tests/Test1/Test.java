@@ -1,3 +1,4 @@
+// Short functions are inlined in the caller if the target is singleton
 public class Test {
 	public static void main(String[] args) {
 		run();
@@ -7,8 +8,10 @@ public class Test {
 		a.call();
 		Animal b = new Animal();
 		b.call();
-		int result =b.sq(5);
-		System.out.println(result);
+		for(int i=0; i<100; i++){
+			int result = b.sq(i);
+			System.out.println(result);
+		}
 	}
 }
 

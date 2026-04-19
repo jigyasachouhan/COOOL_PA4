@@ -1,3 +1,5 @@
+// The types to analysis also checks if the caller object can be of multiple types but the method target is the same for all
+// possible types, then we can monomorphize it
 public class Test {
 	public static void main(String[] args) {
 		Animal examp = new Cat();
@@ -65,11 +67,6 @@ class Cat extends Animal
     int height;
     Cat(){
         height = 4;
-    }
-	int fib(int n){
-        if(n==0) return 1;
-        if(n==1) return 2;
-        return fib(n-1) + fib(n-2);
     }
 }
 

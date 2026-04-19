@@ -12,6 +12,9 @@ import soot.jimple.VirtualInvokeExpr;
 import soot.jimple.internal.JAssignStmt;
 import soot.jimple.internal.JIdentityStmt;
 import soot.jimple.internal.JInvokeStmt;
+import soot.jimple.toolkits.callgraph.CHATransformer;
+import soot.jimple.toolkits.callgraph.CallGraph;
+import soot.jimple.toolkits.callgraph.Edge;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 // import Pgraph.*;
@@ -66,12 +69,12 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
         if(rhs instanceof ParameterRef){
             ParameterRef pr = (ParameterRef)  rhs;
             Type tp = pr.getType();
-            out.objIdToClassMap.put(ID, tp);
+            // out.objIdToClassMap.put(ID, tp);
             if(tp instanceof RefType){
                 SootClass sc = ((RefType) tp).getSootClass();
                 List<SootClass> subClasses = Scene.v().getActiveHierarchy().getSubclassesOf(sc);
                 for(SootClass sub : subClasses)            {
-                    out.objIdToClassMap.put(getobjID(), sub.getType());
+                    // out.objIdToClassMap.put(getobjID(), sub.getType());
                 }
             }
         }
@@ -144,6 +147,28 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
             }
             if(types.isEmpty()){
                 // the current call site might be from the base object
+                Set<SootMethodRef> possibleTargets = new HashSet<>();
+                Scene.v().releaseCallGraph();
+                Scene.v().releasePointsToAnalysis(); // safe even if not using Spark
+                CHATransformer.v().transform();
+                CallGraph cg2 = Scene.v().getCallGraph();
+                for (Iterator<Edge> it = cg2.edgesOutOf(Scene.v().getMethod(method.getSignature())); it.hasNext();) {
+                    Edge e = it.next();
+                    if (e.srcUnit() == stmt) {
+                        possibleTargets.add(e.tgt().makeRef());
+                    }
+                }
+                if(possibleTargets.size() == 1)
+                {
+                    myPrint("yes, this is inlineable");
+                    SootMethodRef resolved = possibleTargets.iterator().next();
+                    vie.setMethodRef(resolved);
+                    this.inlinableMap.put(stmt, true);
+                    isInlinable = true;
+                }
+                else    
+                    myPrint("no, this is not inlineable");
+                // }
                 
             }
             else if(types.size() == 1)
@@ -164,6 +189,25 @@ public class Analysis extends ForwardFlowAnalysis<Unit, Pgraph> {
                 isInlinable = true;
             }
             else{
+                Set<SootMethodRef> possibleTargets = new HashSet<>();
+                for(Type t : types)
+                {
+                    SootClass concreteClass = ((RefType) t).getSootClass();
+                    if (concreteClass.declaresMethod(method.getSubSignature()))
+                    {
+                        SootMethod resolved = concreteClass.getMethod(method.getSubSignature());
+                        possibleTargets.add(resolved.makeRef());
+                    }
+                }
+                if(possibleTargets.size() == 1)
+                {
+                    myPrint("yes, this is inlineable");
+                    SootMethodRef resolved = possibleTargets.iterator().next();
+                    vie.setMethodRef(resolved);
+                    this.inlinableMap.put(stmt, true);
+                    isInlinable = true;
+                }
+                else    
                 myPrint("no, this is not inlineable");
             }
             

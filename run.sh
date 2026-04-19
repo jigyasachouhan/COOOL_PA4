@@ -1,4 +1,6 @@
 #!/usr/bin/bash
+javac -cp .:soot-4.6.0-jar-with-dependencies.jar PA4.java
+
 # get the time stamp for unique output file names
 timestamp=$(date +%s)
 
@@ -9,7 +11,7 @@ java -cp .:soot-4.6.0-jar-with-dependencies.jar PA4 $1 true $timestamp
 # mv sootOutput* sootOutput
 
 # folder name is of the form sootOutput_$1_$timestamp and OriginalOutput_$1_$timestamp
-echo "Compiling and running original classes"
+echo "Running with original classes"
 javac -cp .:OriginalOutput_$1_$timestamp yash.java
 java -Xint -cp .:OriginalOutput_$1_$timestamp yash > tmp.txt
 
